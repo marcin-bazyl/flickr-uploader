@@ -78,6 +78,7 @@ import fcntl
 import errno
 from sys import stdout
 import itertools
+import socket
 
 ##
 ## Read Config from config.ini file
@@ -871,6 +872,7 @@ class Uploadr:
 
 print("--------- Start time: " + time.strftime("%c") + " ---------");
 if __name__ == "__main__":
+	socket.setdefaulttimeout(30.0)
     # Ensure that only once instance of this script is running
     f = open (LOCK_PATH, 'w')
     try: fcntl.lockf (f, fcntl.LOCK_EX | fcntl.LOCK_NB)
