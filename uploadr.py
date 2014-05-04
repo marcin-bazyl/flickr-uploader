@@ -80,6 +80,26 @@ from sys import stdout
 import itertools
 import socket
 
+import code, traceback, signal
+
+# ----------------- special code for debugging when it's stuck ------------
+def debug(sig, frame):
+    """Interrupt running process, and provide a python prompt for
+    interactive debugging."""
+    d={'_frame':frame}         # Allow access to frame object.
+    d.update(frame.f_globals)  # Unless shadowed by global
+    d.update(frame.f_locals)
+
+    i = code.InteractiveConsole(d)
+    message  = "Signal recieved : entering python shell.\nTraceback:\n"
+    message += ''.join(traceback.format_stack(frame))
+    i.interact(message)
+
+def listen():
+    signal.signal(signal.SIGUSR1, debug)  # Register handler
+# -------------------------------------------------------------------------
+    
+#
 ##
 ## Read Config from config.ini file
 ##
@@ -378,9 +398,9 @@ class Uploadr:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
                 time.sleep( DRIP_TIME )
             coun = coun + 1;
-            if (coun%100 == 0):
+            if (coun%500 == 0):
                 print("   " + str(coun) + " files processed (uploaded or md5ed)")
-        if (coun%100 > 0):
+        if (coun%500 > 0):
             print("   " + str(coun) + " files processed (uploaded or md5ed)")
         print("*****Completed uploading files*****")
 
@@ -619,6 +639,12 @@ class Uploadr:
             print(e.code)
         except urllib2.URLError, e:
             print(e.args)
+        except socket.timeout:
+            print "EXCEPTION!!! socket timeout"
+        except:
+            print "EXCEPTION!!! unknown type"
+            e = sys.exc_info()[0]
+            print("EXCEPTION!!! details: %s" % e)
         return json.loads(res)
 
     def run( self ):
@@ -690,6 +716,7 @@ class Uploadr:
                     con.text_factory = str
                     self.createSet( setName, file[0], cur, con)
                 else :
+                    print('error for file: ' + str(file[1]))
                     self.reportError( res )
         except:
             print(str(sys.exc_info()))
@@ -872,7 +899,8 @@ class Uploadr:
 
 print("--------- Start time: " + time.strftime("%c") + " ---------");
 if __name__ == "__main__":
-	socket.setdefaulttimeout(30.0)
+    listen()
+    socket.setdefaulttimeout(30.0)
     # Ensure that only once instance of this script is running
     f = open (LOCK_PATH, 'w')
     try: fcntl.lockf (f, fcntl.LOCK_EX | fcntl.LOCK_NB)
