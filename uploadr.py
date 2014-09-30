@@ -104,9 +104,11 @@ def listen():
 ## Read Config from config.ini file
 ##
 
+INI_FILENAME = "uploadr.ini"
+
 import ConfigParser
 config = ConfigParser.ConfigParser()
-config.read(os.path.join(os.path.dirname(sys.argv[0]), "uploadr.ini"))
+config.read(os.path.join(os.path.dirname(sys.argv[0]), INI_FILENAME))
 FILES_DIR = eval(config.get('Config','FILES_DIR'))
 FLICKR = eval(config.get('Config','FLICKR'))
 SLEEP_TIME = eval(config.get('Config','SLEEP_TIME'))
@@ -216,6 +218,7 @@ class Uploadr:
         Your API application key. See here for more details.
         """
 
+        global FLICKR
         d = {
             "method"          : "flickr.auth.getFrob",
             "format"          : "json",
@@ -386,14 +389,22 @@ class Uploadr:
     def upload( self ):
         """ upload
         """
-
         print("*****Uploading files*****")
+        global FLICKR
 
-        allMedia = self.grabNewFiles()
+        allMedia, local_ini_file_dirs = self.grabNewFiles()
         print("Found " + str(len(allMedia)) + " files")
         coun = 0;
         for i, file in enumerate( allMedia ):
-            success = self.uploadFile( file )
+            if (os.path.dirname(file) in local_ini_file_dirs):
+                # read the local ini file
+                localCfg = ConfigParser.ConfigParser()
+                localCfg.read(os.path.join(os.path.dirname(file), INI_FILENAME))
+                local_flickr = FLICKR.copy()
+                local_flickr.update(eval(localCfg.get('Config','FLICKR')))
+            else:
+                local_flickr = FLICKR
+            success = self.uploadFile( file, local_flickr )
             if args.drip_feed and success and i != len( newFiles )-1:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
                 time.sleep( DRIP_TIME )
@@ -409,20 +420,24 @@ class Uploadr:
         """
 
         files = []
+        local_ini_files = []
         for dirpath, dirnames, filenames in os.walk( FILES_DIR, followlinks=True):
             for curr_dir in EXCLUDED_FOLDERS:
                 if curr_dir in dirnames:
                     dirnames.remove(curr_dir)
             for f in filenames :
+                if f == INI_FILENAME:
+                    print("found local ini file in "+dirpath)
+                    local_ini_files.append(dirpath)
                 ext = f.lower().split(".")[-1]
                 if ext in ALLOWED_EXT:
                     fileSize = os.path.getsize( dirpath + "/" + f )
                     if (fileSize < FILE_MAX_SIZE):
                         files.append( os.path.normpath( dirpath + "/" + f ) )
         files.sort()
-        return files
+        return files, local_ini_files
 
-    def uploadFile( self, file ):
+    def uploadFile( self, file, flickrCfg ):
         """ uploadFile
         """
 
@@ -440,24 +455,24 @@ class Uploadr:
                 try:
                     photo = ('photo', file, open(file,'rb').read())
                     if args.title: # Replace
-                        FLICKR["title"] = args.title
+                        flickrCfg["title"] = args.title
                     if args.description: # Replace
-                        FLICKR["description"] = args.description
+                        flickrCfg["description"] = args.description
                     if args.tags: # Append
-                        FLICKR["tags"] += " " + args.tags + " "
+                        flickrCfg["tags"] += " " + args.tags + " "
                     d = {
                         "auth_token"    : str(self.token),
                         "perms"         : str(self.perms),
-                        "title"         : str( FLICKR["title"] ),
-                        "description"   : str( FLICKR["description"] ),
-                        "tags"          : str( FLICKR["tags"] + "," + setName ),
-                        "is_public"     : str( FLICKR["is_public"] ),
-                        "is_friend"     : str( FLICKR["is_friend"] ),
-                        "is_family"     : str( FLICKR["is_family"] )
+                        "title"         : str( flickrCfg["title"] ),
+                        "description"   : str( flickrCfg["description"] ),
+                        "tags"          : str( flickrCfg["tags"] + "," + setName ),
+                        "is_public"     : str( flickrCfg["is_public"] ),
+                        "is_friend"     : str( flickrCfg["is_friend"] ),
+                        "is_family"     : str( flickrCfg["is_family"] )
                     }
                     sig = self.signCall( d )
                     d[ "api_sig" ] = sig
-                    d[ "api_key" ] = FLICKR[ "api_key" ]
+                    d[ "api_key" ] = flickrCfg[ "api_key" ]
                     url = self.build_request(api.upload, d, (photo,))
                     res = parse(urllib2.urlopen( url ))
                     if ( not res == "" and res.documentElement.attributes['stat'].value == "ok" ):
